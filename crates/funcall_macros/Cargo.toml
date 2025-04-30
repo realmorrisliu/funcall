@@ -1,0 +1,21 @@
+[package]
+name = "funcall-macros"
+version = "0.1.0"
+edition = "2024"
+authors = ["luckywood <morrisliu1994@outlook.com>"]
+description = "Procedural macros for the funcall library"
+license = "MIT"
+repository = "https://github.com/realmorrisliu/funcall"
+homepage = "https://github.com/realmorrisliu/funcall"
+documentation = "https://docs.rs/funcall-macros"
+readme = "README.md"
+keywords = ["macro", "function-call", "ai"]
+categories = ["development-tools", "rust-patterns"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2", features = ["full"] }
+quote = "1"
+proc-macro2 = "1"

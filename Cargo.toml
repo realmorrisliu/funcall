@@ -1,0 +1,4 @@
+# funcall/Cargo.toml
+[workspace]
+members = ["crates/funcall_macros", "crates/funcall"]
+resolver = "3"
