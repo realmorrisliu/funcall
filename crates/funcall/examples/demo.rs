@@ -59,4 +59,10 @@ fn main() {
         "age": 30
     }]));
     println!("result = {}", res);
+
+    let res = tools["greet"](&json!({
+        "name": "Morris",
+        "excited": true
+    }));
+    println!("result = {}", res);
 }

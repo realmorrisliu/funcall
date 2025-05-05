@@ -8,34 +8,41 @@ pub fn funcall(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let name = &func.sig.ident;
     let wrapper_name = format_ident!("{}_tool", name);
 
-    let mut arg_names = Vec::new();
-    let mut extract_stmts = Vec::new();
+    let mut arg_idents = Vec::new();
+    let mut positional_stmts = Vec::new();
+    let mut named_stmts = Vec::new();
 
     for (i, input) in func.sig.inputs.iter().enumerate() {
         if let FnArg::Typed(pat_type) = input {
             let ident = match &*pat_type.pat {
-                Pat::Ident(PatIdent { ident, .. }) => ident,
-                _ => panic!("Unsupported pattern"),
+                Pat::Ident(PatIdent { ident, .. }) => ident.clone(),
+                _ => panic!("Unsupported argument pattern"),
             };
+            let ty = &pat_type.ty;
+            let index = syn::Index::from(i);
+            let key = ident.to_string();
 
-            let (stmt, _) = extract_type_code(ident, &pat_type.ty, i);
-            arg_names.push(ident);
-            extract_stmts.push(stmt);
+            let (pos_stmt, named_stmt) = extract_dual(&ident, ty, &index, &key);
+            arg_idents.push(ident);
+            positional_stmts.push(pos_stmt);
+            named_stmts.push(named_stmt);
         }
     }
-
-    let arg_count = arg_names.len();
 
     let expanded = quote! {
         #func
 
         pub fn #wrapper_name(args: &::serde_json::Value) -> ::serde_json::Value {
-            let args = args.as_array().expect("expected JSON array");
-            assert_eq!(args.len(), #arg_count, "wrong number of args");
+            #(let #arg_idents;)*
+            if let Some(arr) = args.as_array() {
+                #(#positional_stmts)*
+            } else if let Some(obj) = args.as_object() {
+                #(#named_stmts)*
+            } else {
+                panic!("expected JSON array or object");
+            }
 
-            #(#extract_stmts)*
-
-            let result = #name(#(#arg_names),*);
+            let result = #name(#(#arg_idents),*);
             ::serde_json::json!(result)
         }
     };
@@ -43,46 +50,49 @@ pub fn funcall(_attr: TokenStream, item: TokenStream) -> TokenStream {
     TokenStream::from(expanded)
 }
 
-fn extract_type_code(
+fn extract_dual(
     ident: &syn::Ident,
     ty: &Box<Type>,
-    index: usize,
-) -> (proc_macro2::TokenStream, bool) {
+    index: &syn::Index,
+    key: &str,
+) -> (proc_macro2::TokenStream, proc_macro2::TokenStream) {
     let ty_str = quote!(#ty).to_string().replace(' ', "");
 
-    let stmt = if ty_str == "i32" {
-        quote! {
-            let #ident = args[#index].as_i64().expect("expected i64") as i32;
-        }
+    let positional = if ty_str == "i32" {
+        quote! { #ident = arr[#index].as_i64().expect("expected i64") as i32; }
     } else if ty_str == "f64" {
-        quote! {
-            let #ident = args[#index].as_f64().expect("expected f64");
-        }
+        quote! { #ident = arr[#index].as_f64().expect("expected f64"); }
     } else if ty_str == "bool" {
-        quote! {
-            let #ident = args[#index].as_bool().expect("expected bool");
-        }
+        quote! { #ident = arr[#index].as_bool().expect("expected bool"); }
     } else if ty_str == "String" {
+        quote! { #ident = arr[#index].as_str().expect("expected string").to_string(); }
+    } else {
+        // fallback to full deserialization for Option<T>, Vec<T>, struct
         quote! {
-            let #ident = args[#index].as_str().expect("expected string").to_string();
+            #ident = ::serde::Deserialize::deserialize(&arr[#index]).expect("failed to deserialize positional");
         }
+    };
+
+    let named = if ty_str == "i32" {
+        quote! { #ident = obj[#key].as_i64().expect("expected i64") as i32; }
+    } else if ty_str == "f64" {
+        quote! { #ident = obj[#key].as_f64().expect("expected f64"); }
+    } else if ty_str == "bool" {
+        quote! { #ident = obj[#key].as_bool().expect("expected bool"); }
+    } else if ty_str == "String" {
+        quote! { #ident = obj[#key].as_str().expect("expected string").to_string(); }
     } else if ty_str.starts_with("Option<") {
         quote! {
-            let #ident = match args.get(#index) {
+            #ident = match obj.get(#key) {
                 Some(v) if !v.is_null() => Some(::serde::Deserialize::deserialize(v).expect("failed to parse Option")),
                 _ => None
             };
         }
-    } else if ty_str.starts_with("Vec<") {
-        quote! {
-            let #ident: #ty = ::serde::Deserialize::deserialize(&args[#index]).expect("failed to parse Vec");
-        }
     } else {
-        // Assume any other type implements Deserialize
         quote! {
-            let #ident: #ty = ::serde::Deserialize::deserialize(&args[#index]).expect("failed to deserialize struct");
+            #ident = ::serde::Deserialize::deserialize(&obj[#key]).expect("failed to deserialize named param");
         }
     };
 
-    (stmt, true)
+    (positional, named)
 }

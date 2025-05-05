@@ -18,7 +18,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-funcall = { git = "https://github.com/realmorrisliu/funcall" }
+funcall = "0.2.0"
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 ```
@@ -99,6 +99,13 @@ let result = tools["describe_user"](&json!([{
     "age": 30
 }]));
 println!("{}", result); // "Morris is 30 years old"
+
+// Named arguments
+let res = tools["greet"](&json!({
+    "name": "Morris",
+    "excited": true
+}));
+println!("result = {}", res); // Hello, Morris!!!
 ```
 
 ## Supported Argument Types
